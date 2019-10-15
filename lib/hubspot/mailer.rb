@@ -124,10 +124,10 @@ module Hubspot
 
     attr_internal :message
 
-    def initialize
-      super()
+    def initialize(mail_method, *args)
       @_mail_was_called = false
       @_message         = Message.new
+      process(mail_method, *args) if mail_method
     end
 
     def process(method_name, *args) #:nodoc:
@@ -146,7 +146,15 @@ module Hubspot
     def mail(headers = {}, &block)
       return message if @_mail_was_called && headers.blank? && !block
 
-      headers = apply_defaults(headers)
+      default_values = ActionMailer::Base.default.map do |key, value|
+                       [
+                         key,
+                         compute_default(value)
+                       ]
+                     end.to_h
+
+      headers = headers.reverse_merge(default_values)
+      headers[:subject] ||= default_i18n_subject
 
       # Set configure delivery behavior
       wrap_delivery_behavior!(headers[:delivery_method], headers[:delivery_method_options])
@@ -163,6 +171,16 @@ module Hubspot
     end
 
     private
+
+    def compute_default(value)
+      return value unless value.is_a?(Proc)
+
+      if value.arity == 1
+        instance_exec(self, &value)
+      else
+        instance_exec(&value)
+      end
+    end
 
     def assign_attributes_to_message(message, headers)
       hubspot_props = %i[email_id send_id contact_properties custom_properties]
